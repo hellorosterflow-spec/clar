@@ -1,10 +1,12 @@
 /**
  * Balance checks for addresses the page already derived locally.
- * Same public endpoints as the existing checker, one key at a time.
+ * Same public endpoints as the existing checker. Several keys may be in flight;
+ * same-chain JSON-RPC calls are coalesced into one HTTP batch.
  * Nothing here accepts or transmits a private key.
  */
 import { deriveKey } from './derive.js';
 
+/** Max JSON-RPC calls in one HTTP batch. Key concurrency lives in the scanner. */
 export const VERIFY_BATCH = 20;
 const TOKEN_LIMIT = 30;
 const RPC_TIMEOUT_MS = 30_000;
@@ -117,7 +119,86 @@ async function request(url, init, signal, fetchImpl) {
   throw lastError instanceof Error ? lastError : new Error('Cerere eșuată');
 }
 
-async function rpc(url, method, params, signal, fetchImpl) {
+/**
+ * After the native balance is known, decide the next read.
+ * `nonce` stays null until the activity signal is fetched.
+ * Empty wallets stop after the balance on chains that cannot index tokens.
+ * @returns {'nonce' | 'tokens' | 'done'}
+ */
+export function selectEvmProbes(chain, balance, nonce) {
+  const tokensPossible = !chain?.tokensUnsupported && Boolean(chain?.blockscout);
+  if (balance > 0n) return tokensPossible ? 'tokens' : 'done';
+  if (!tokensPossible) return 'done';
+  if (nonce == null) return 'nonce';
+  return nonce > 0n ? 'tokens' : 'done';
+}
+
+export function buildJsonRpcBatch(calls) {
+  return calls.map((call, index) => ({
+    jsonrpc: '2.0',
+    id: index + 1,
+    method: call.method,
+    params: call.params,
+  }));
+}
+
+export function readJsonRpcBatch(payload, size) {
+  if (!Array.isArray(payload)) {
+    const error = new Error(payload?.error?.message || 'Batch respins');
+    error.name = 'BatchRejected';
+    throw error;
+  }
+  const byId = new Map();
+  for (const entry of payload) {
+    if (entry && entry.id != null) byId.set(Number(entry.id), entry);
+  }
+  const results = [];
+  for (let index = 0; index < size; index += 1) {
+    const entry = byId.get(index + 1);
+    if (!entry) {
+      results.push({ error: new Error('Răspuns RPC incomplet') });
+    } else if (entry.error) {
+      results.push({ error: new Error(entry.error.message || 'Răspuns RPC invalid') });
+    } else {
+      results.push({ result: entry.result });
+    }
+  }
+  return results;
+}
+
+const fetchIds = new WeakMap();
+let fetchSerial = 0;
+const rpcLanes = new Map();
+
+function fetchLaneId(fetchImpl) {
+  if (!fetchImpl || fetchImpl === fetch) return 'global';
+  let id = fetchIds.get(fetchImpl);
+  if (!id) {
+    fetchSerial += 1;
+    id = `fetch-${fetchSerial}`;
+    fetchIds.set(fetchImpl, id);
+  }
+  return id;
+}
+
+function abortError() {
+  const error = new Error('aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+function combinedSignal(items) {
+  const signals = [];
+  for (const item of items) {
+    if (item.signal && !signals.includes(item.signal)) signals.push(item.signal);
+  }
+  if (!signals.length) return undefined;
+  if (signals.length === 1) return signals[0];
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals);
+  return signals[0];
+}
+
+async function rpcOnce(url, method, params, signal, fetchImpl) {
   const response = await request(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -127,6 +208,115 @@ async function rpc(url, method, params, signal, fetchImpl) {
   const payload = await response.json();
   if (payload.error) throw new Error(payload.error.message || 'Răspuns RPC invalid');
   return payload.result;
+}
+
+async function rpcBatchOnce(url, items, fetchImpl) {
+  const response = await request(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(buildJsonRpcBatch(items)),
+  }, combinedSignal(items), fetchImpl);
+  if (!response.ok) {
+    if (response.status === 400 || response.status === 413 || response.status === 415) {
+      const error = new Error(`RPC indisponibil (HTTP ${response.status})`);
+      error.name = 'BatchRejected';
+      throw error;
+    }
+    throw new Error(`RPC indisponibil (HTTP ${response.status})`);
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    const rejected = new Error('Batch respins');
+    rejected.name = 'BatchRejected';
+    rejected.cause = error;
+    throw rejected;
+  }
+  return readJsonRpcBatch(payload, items.length);
+}
+
+async function deliverRpc(url, items, fetchImpl) {
+  const live = items.filter((item) => !item.aborted);
+  if (!live.length) return;
+  try {
+    if (live.length === 1) {
+      const result = await rpcOnce(url, live[0].method, live[0].params, live[0].signal, fetchImpl);
+      live[0].cleanup?.();
+      live[0].resolve(result);
+      return;
+    }
+    const results = await rpcBatchOnce(url, live, fetchImpl);
+    live.forEach((item, index) => {
+      item.cleanup?.();
+      const outcome = results[index];
+      if (outcome?.error) item.reject(outcome.error);
+      else item.resolve(outcome?.result);
+    });
+  } catch (error) {
+    if (error?.name === 'BatchRejected' && live.length > 1) {
+      await Promise.all(live.map(async (item) => {
+        try {
+          const result = await rpcOnce(url, item.method, item.params, item.signal, fetchImpl);
+          item.cleanup?.();
+          item.resolve(result);
+        } catch (inner) {
+          item.cleanup?.();
+          item.reject(inner);
+        }
+      }));
+      return;
+    }
+    for (const item of live) {
+      item.cleanup?.();
+      item.reject(error);
+    }
+  }
+}
+
+function flushLane(key) {
+  const lane = rpcLanes.get(key);
+  if (!lane) return;
+  if (lane.timer) {
+    clearTimeout(lane.timer);
+    lane.timer = null;
+  }
+  const items = lane.items.splice(0, VERIFY_BATCH);
+  if (!lane.items.length) rpcLanes.delete(key);
+  else if (!lane.timer) lane.timer = setTimeout(() => flushLane(key), 0);
+  for (const item of items) {
+    if (item.aborted) item.cleanup?.();
+  }
+  void deliverRpc(lane.url, items, lane.fetchImpl);
+}
+
+function enqueueRpc(url, method, params, signal, fetchImpl) {
+  if (signal?.aborted) return Promise.reject(abortError());
+  const key = `${url}\n${fetchLaneId(fetchImpl)}`;
+  let lane = rpcLanes.get(key);
+  if (!lane) {
+    lane = { url, fetchImpl, items: [], timer: null };
+    rpcLanes.set(key, lane);
+  }
+  return new Promise((resolve, reject) => {
+    const item = { method, params, signal, resolve, reject, aborted: false, cleanup: null };
+    const onAbort = () => {
+      item.aborted = true;
+      item.cleanup?.();
+      reject(abortError());
+    };
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+      item.cleanup = () => signal.removeEventListener('abort', onAbort);
+    }
+    lane.items.push(item);
+    if (lane.items.length >= VERIFY_BATCH) flushLane(key);
+    else if (!lane.timer) lane.timer = setTimeout(() => flushLane(key), 0);
+  });
+}
+
+function rpc(url, method, params, signal, fetchImpl) {
+  return enqueueRpc(url, method, params, signal, fetchImpl);
 }
 
 async function mapPool(items, limit, task) {
@@ -150,14 +340,9 @@ async function evmAssets(address, chain, signal, fetchImpl) {
   const assets = [];
   const errors = [];
   let balance = 0n;
-  let nonce = 0n;
   try {
-    const [balanceResult, nonceResult] = await Promise.all([
-      rpc(chain.rpc, 'eth_getBalance', [address, 'latest'], signal, fetchImpl),
-      rpc(chain.rpc, 'eth_getTransactionCount', [address, 'latest'], signal, fetchImpl).catch(() => '0x0'),
-    ]);
+    const balanceResult = await rpc(chain.rpc, 'eth_getBalance', [address, 'latest'], signal, fetchImpl);
     balance = BigInt(balanceResult || '0x0');
-    nonce = BigInt(nonceResult || '0x0');
   } catch (error) {
     if (error?.name === 'AbortError') throw error;
     return { assets, errors: [error instanceof Error ? error.message : 'Nu s-a putut citi soldul nativ.'] };
@@ -170,7 +355,19 @@ async function evmAssets(address, chain, signal, fetchImpl) {
       balance: formatUnits(balance, chain.decimals),
     });
   }
-  if (!(balance > 0n || nonce > 0n) || chain.tokensUnsupported || !chain.blockscout) return { assets, errors };
+  let nonce = null;
+  let step = selectEvmProbes(chain, balance, nonce);
+  if (step === 'nonce') {
+    try {
+      const nonceResult = await rpc(chain.rpc, 'eth_getTransactionCount', [address, 'latest'], signal, fetchImpl);
+      nonce = BigInt(nonceResult || '0x0');
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      nonce = 0n;
+    }
+    step = selectEvmProbes(chain, balance, nonce);
+  }
+  if (step !== 'tokens') return { assets, errors };
   try {
     await sleep(50, signal);
     const response = await request(`${chain.blockscout}/addresses/${address}/token-balances`, {
@@ -263,8 +460,9 @@ export async function verifyAddress(address, chainName, options = {}) {
 }
 
 /**
- * Check every derived address of one key, in order.
- * Chain lookups for that key overlap slightly; the next key does not start early.
+ * Check every derived address of one key.
+ * Enabled chains run together so their JSON-RPC calls can share a batch.
+ * The scanner may run several keys at once; this function still checks every chain.
  */
 export async function verifyKey(key, options = {}) {
   const addresses = deriveKey(key);
@@ -282,16 +480,23 @@ export async function verifyKey(key, options = {}) {
       : item.chain === 'Solana'
         ? (networkAllowed(enabled, SOLANA.id) ? [SOLANA] : [])
         : EVM_CHAINS.filter((chain) => networkAllowed(enabled, chain.id));
-    await mapPool(chains, 3, async (chain) => {
+    const partial = new Array(chains.length);
+    await mapPool(chains.map((chain, index) => ({ chain, index })), chains.length, async ({ chain, index }) => {
       try {
-        const result = await verifyAddress(item.address, chain.name, options);
-        assets.push(...result.assets);
-        errors.push(...result.errors);
+        partial[index] = await verifyAddress(item.address, chain.name, options);
       } catch (error) {
         if (error?.name === 'AbortError') throw error;
-        errors.push(error instanceof Error ? error.message : 'Verificare eșuată.');
+        partial[index] = {
+          assets: [],
+          errors: [error instanceof Error ? error.message : 'Verificare eșuată.'],
+        };
       }
     });
+    for (const result of partial) {
+      if (!result) continue;
+      assets.push(...result.assets);
+      errors.push(...result.errors);
+    }
   }
   return {
     addresses,
