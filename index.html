@@ -4,14 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>Verificator portofele publice</title>
-    <meta name="description" content="Identificator universal: adrese publice EVM/BNB/Bitcoin/Solana și hash-uri de tranzacție. Doar citire — fără chei private." />
+    <meta name="description" content="Verifică adrese publice EVM, Bitcoin și Solana, hash-uri de tranzacție sau o cheie privată derivată doar în browser. Doar citire." />
     <meta name="robots" content="index, follow" />
     <meta property="og:title" content="Verificator portofele publice" />
-    <meta property="og:description" content="Identificator universal: adrese publice EVM/BNB/Bitcoin/Solana și hash-uri de tranzacție. Doar citire — fără chei private." />
+    <meta property="og:description" content="Verifică adrese publice EVM, Bitcoin și Solana, hash-uri de tranzacție sau o cheie privată derivată doar în browser. Doar citire." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Verificator portofele publice" />
-    <meta name="twitter:description" content="Identificator universal: adrese publice EVM/BNB/Bitcoin/Solana și hash-uri de tranzacție. Doar citire — fără chei private." />
+    <meta name="twitter:description" content="Verifică adrese publice EVM, Bitcoin și Solana, hash-uri de tranzacție sau o cheie privată derivată doar în browser. Doar citire." />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,6 +21,7 @@
     <!-- When CLAR_WORKER_URL is set, routes clar's public API calls through the Worker (CORS). -->
     <script src="./api-bridge.js"></script>
     <script type="module" crossorigin src="./assets/index.js"></script>
+    <script type="module" src="./assets/key-local.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index.css">
   </head>
   <body>
