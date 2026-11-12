@@ -4,7 +4,14 @@
  */
 import { planCheck } from './plan.js';
 import { registerSecrets, redact, containsSecret } from './privacy.js';
-import { FileReadError, extractKeysFromFile, MAX_FILE_BYTES } from './read-files.js';
+import {
+  FileReadError,
+  extractKeysFromFile,
+  MAX_DOCUMENT_BYTES,
+  MAX_FILE_BYTES,
+  fileReadLimitMessage,
+  formatUploadLimit,
+} from './read-files.js';
 
 const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
 let programmatic = 0;
@@ -53,7 +60,9 @@ function progressCopy(fileName, index, total, event) {
 
 function errorCopy(error) {
   const name = redact(error.fileName || 'fișier');
-  if (error.code === 'too-big') return `„${name}” depășește limita de 40 MB.`;
+  if (error.code === 'too-big' || error.code === 'too-big-document') {
+    return fileReadLimitMessage(error.code, name);
+  }
   if (error.code === 'unsupported') {
     return `„${name}” nu este un format acceptat. Folosește PDF, TXT, CSV, JSON, LOG, MD, HTML sau DOCX.`;
   }
@@ -313,13 +322,13 @@ function buildPanel() {
       <span class="section-kicker">CHEIE SAU FIȘIER</span>
       <h3>Derivare doar în browser</h3>
     </div>
-    <p class="key-help">Poți lipi o adresă publică, un hash de tranzacție sau o cheie privată în câmpul de mai sus. Poți și încărca un fișier în care ai pus tu cheia: PDF, TXT, CSV, JSON, LOG, MD, HTML sau DOCX, până la 40 MB. Citirea este pe bucăți și poate fi anulată. Frazele mnemonic nu sunt derivate.</p>
+    <p class="key-help">Poți lipi o adresă publică, un hash de tranzacție sau o cheie privată în câmpul de mai sus. Poți și încărca un fișier în care ai pus tu cheia: TXT, CSV, JSON, LOG, MD sau HTML până la ${formatUploadLimit(MAX_FILE_BYTES)}; PDF și DOCX până la ${formatUploadLimit(MAX_DOCUMENT_BYTES)}, pentru că acele formate se deschid ca întreg. Citirea este pe bucăți și poate fi anulată. Frazele mnemonic nu sunt derivate.</p>
     <div class="key-file-row">
       <label class="button-quiet key-file-label">
         <input class="key-file-input" type="file" multiple accept=".pdf,.txt,.csv,.json,.log,.md,.html,.htm,.docx,text/plain,application/pdf,application/json,text/csv,text/html,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" data-testid="key-file-input" />
         Încarcă fișier
       </label>
-      <span class="key-drop-hint">sau trage fișierul aici · max ${Math.round(MAX_FILE_BYTES / (1024 * 1024))} MB</span>
+      <span class="key-drop-hint">sau trage fișierul aici · max ${formatUploadLimit(MAX_FILE_BYTES)}</span>
     </div>
     <div class="key-progress" data-testid="key-progress" hidden>
       <div class="progress-track"><span data-testid="key-progress-bar"></span></div>

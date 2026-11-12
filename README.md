@@ -9,7 +9,7 @@ Balance lookups go through the Cloudflare Worker URL in `config.js`. The Worker 
 The page can derive a public address from a key you paste, or from a key you placed in a file you upload, and then run the existing balance check on that address.
 
 - Supported key material: 64-character hex (with or without `0x`) for EVM, Bitcoin WIF (compressed and uncompressed), and a Solana 64-byte secret key as hex or a JSON byte array.
-- Files: PDF, TXT, CSV, JSON, LOG, MD, HTML, and DOCX, up to 40 MB. Large files are read in chunks, with a progress indicator and a cancel button. PDF text is extracted in the browser with PDF.js. DOCX is unzipped locally.
+- Files: TXT, CSV, JSON, LOG, MD, and HTML up to 1 GB. Text files are read in chunks and are never loaded as one string, with a progress indicator and a cancel button. PDF and DOCX are limited to 100 MB, because those formats are opened as a whole in the browser. PDF text is extracted in the browser with PDF.js. DOCX is unzipped locally.
 - A 64-character hex string is still classified as a transaction hash by the existing checker. If it is also a valid EVM private key, the public address is derived locally and checked as well. Explorer links for that string are removed so the string is not sent out of the browser.
 - Seed phrases (mnemonics) are not derived. Adding BIP-39 and the derivation paths would pull in a large wordlist for a format the page does not need in order to check a pasted key.
 - The private key, WIF, seed, and file bytes are not sent to the Worker, stored in `localStorage` / `sessionStorage`, or put in the page URL. Requests that would contain key material are blocked in the page. Only the derived public address is looked up, the same way a typed public address already is.
