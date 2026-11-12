@@ -98,6 +98,32 @@ test('accepts a decimal 1 GB text file and keeps PDF and DOCX at 100 MB', async 
   );
 });
 
+test('keeps every unique key instead of stopping at 100', async () => {
+  const lines = ['id,private_key_hex'];
+  for (let index = 1; index <= 120; index += 1) {
+    lines.push(`${String(index).padStart(8, '0')},${index.toString(16).padStart(64, '0')}`);
+  }
+  const file = new File([`${lines.join('\n')}\n`], 'many.csv', { type: 'text/csv' });
+  const result = await extractKeysFromFile(file);
+  assert.equal(result.keys.length, 120);
+  assert.equal(result.overflow, 0);
+});
+
+test('resumes a text file at a line boundary', async () => {
+  const { forEachTextLine } = await import('./read-files.js');
+  const first = `00000001,${'ab'.repeat(32)}\n`;
+  const second = `00000002,${'cd'.repeat(32)}\n`;
+  const header = 'id,private_key_hex\n';
+  const file = new File([header, first, second], 'resume.csv');
+  const start = new TextEncoder().encode(header + first).length;
+  const lines = [];
+  await forEachTextLine(file, {
+    startOffset: start,
+    onLine: ({ text }) => { lines.push(text); },
+  });
+  assert.deepEqual(lines, [second.trimEnd()]);
+});
+
 test('scans csv, json, log, md and html as text', async () => {
   const csv = new File([`id,secret\n1,${HARDHAT}\n`], 'wallets.csv');
   const result = await extractKeysFromFile(csv);
