@@ -162,27 +162,22 @@ export function findPrivateKeysInDocument(text) {
 }
 
 const CARRY = 64 * 1024;
-export const MAX_STORED_KEYS = 100;
 
 export function createKeyBuffer() {
   let buffer = '';
   const found = [];
   const seen = new Set();
-  let overflow = 0;
 
   function absorb(key) {
     const id = keyId(key);
     if (seen.has(id)) return;
-    if (seen.size >= MAX_STORED_KEYS) {
-      overflow += 1;
-      return;
-    }
     seen.add(id);
     found.push({
       ...key,
       token: copyString(key.token),
       hex: key.hex ? copyString(key.hex) : undefined,
       wif: key.wif ? copyString(key.wif) : undefined,
+      bytes: key.bytes ? new Uint8Array(key.bytes) : undefined,
       fromText: false,
     });
   }
@@ -204,7 +199,7 @@ export function createKeyBuffer() {
       if (buffer.length > CARRY) buffer = buffer.slice(buffer.length - CARRY);
     },
     finish() {
-      return { keys: found, overflow };
+      return { keys: found, overflow: 0 };
     },
   };
 }

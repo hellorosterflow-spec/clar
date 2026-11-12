@@ -24,3 +24,16 @@
 #clar-key-panel .key-skip{color:var(--warn)}
 #clar-key-panel.is-dragover{border-color:var(--accent);background:#f3faf6}
 #clar-key-panel.is-busy .key-file-label{opacity:.55;pointer-events:none}
+#clar-key-panel .key-progress-row{flex-wrap:wrap}
+#clar-key-panel .key-progress-row p{overflow-wrap:anywhere}
+#clar-key-panel .key-email{border:1px solid var(--line);background:#faf8f2;border-radius:10px;margin-top:12px;padding:10px 12px}
+#clar-key-panel .key-email-opt{align-items:center;gap:8px;margin-top:8px;font-size:13px;font-weight:600;display:flex}
+#clar-key-panel .key-email-input{border:1px solid var(--line);background:#fff;border-radius:8px;width:100%;margin-top:8px;padding:8px 10px;font:13px/1.4 ui-monospace,monospace}
+#clar-key-panel .key-history{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+#clar-key-panel .key-history-head{flex-wrap:wrap;align-items:center;gap:8px 12px;display:flex}
+#clar-key-panel .key-history-head h3{letter-spacing:-.02em;margin:0;font-size:16px}
+#clar-key-panel .key-history-head em{color:var(--accent);background:#eef5f1;border-radius:999px;padding:2px 8px;font-size:12px;font-style:normal}
+#clar-key-panel .key-history-card{background:#faf8f2;border:1px solid #efe9da;border-radius:8px;margin-top:8px;padding:8px 10px}
+#clar-key-panel .key-history-time{color:var(--muted);margin:0;font-size:11px}
+#clar-key-panel .key-secret{overflow-wrap:anywhere;margin:6px 0;font-size:12px;user-select:text}
+#clar-key-panel .key-history-card .button-quiet{margin-top:8px}

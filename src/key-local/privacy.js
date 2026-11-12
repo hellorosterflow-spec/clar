@@ -1,7 +1,10 @@
 /**
  * Keeps key material from leaving the browser or being written into storage.
- * Only derived public addresses are allowed to reach the existing checker.
+ * The only request allowed to carry a private key is the visitor's opt-in
+ * POST to the Worker's /notify path. IndexedDB is not covered here; the scan
+ * history uses it on purpose and stays on this device.
  */
+import { isOptInNotifyRequest } from './notify.js';
 
 const masks = new Map();
 
@@ -78,6 +81,8 @@ export function installPrivacyGuards() {
   window.fetch = (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input?.url || '';
     const body = init && typeof init.body === 'string' ? init.body : '';
+    const worker = typeof window.CLAR_WORKER_URL === 'string' ? window.CLAR_WORKER_URL : '';
+    if (isOptInNotifyRequest(url, init, worker)) return originalFetch(input, init);
     if (containsSecret(url) || containsSecret(body)) return blockedResponse();
     return originalFetch(input, init);
   };

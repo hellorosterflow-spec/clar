@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build:keys": "node scripts/build-key-local.mjs",
-    "test:keys": "node --test src/key-local/*.test.js"
+    "test:keys": "node --test --test-concurrency=1 src/key-local/*.test.js worker/src/*.test.js"
   },
   "devDependencies": {
     "@noble/curves": "^1.9.0",
