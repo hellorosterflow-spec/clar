@@ -1,6 +1,6 @@
 # clar
 
-Static GitHub Pages site for a read-only wallet checker (EVM, BNB, Bitcoin, Solana, and transaction hashes). There is no wallet connection and no way to sign or send a transaction.
+Static GitHub Pages site for a read-only wallet checker (EVM, BNB, Bitcoin, Solana, and transaction hashes). The published page is titled Key Screener. There is no wallet connection and no way to sign or send a transaction.
 
 Balance lookups go through the Cloudflare Worker URL in `config.js`. The Worker is not part of this repository, and it still receives only public addresses.
 
