@@ -1,0 +1,17 @@
+{
+  "name": "clar",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:keys": "node scripts/build-key-local.mjs",
+    "test:keys": "node --test src/key-local/*.test.js"
+  },
+  "devDependencies": {
+    "@noble/curves": "^1.9.0",
+    "@noble/hashes": "^1.8.0",
+    "@scure/base": "^1.2.5",
+    "esbuild": "^0.25.5",
+    "fflate": "^0.8.2",
+    "pdfjs-dist": "^4.10.38"
+  }
+}
